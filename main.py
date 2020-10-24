@@ -1,45 +1,65 @@
 """
-Demo the Bebop indoors (sets small speeds and then flies just a small amount)
-Note, the bebop will hurt your furniture if it hits it.  Even though this is a very small
-amount of flying, be sure you are doing this in an open area and are prepared to catch!
+Demo of the Bebop ffmpeg based vision code (basically flies around and saves out photos as it flies)
+
 Author: Amy McGovern
 """
-
 from pyparrot.Bebop import Bebop
+from pyparrot.DroneVision import DroneVision
+import pyparrot.VisionServer
+import threading
+import cv2
+import time
 
-bebop = Bebop(drone_type="Bebop2")
+isAlive = False
 
-print("connecting")
-success = bebop.connect(10)
-print(success)
+class UserVision:
+    def __init__(self, vision):
+        self.index = 0
+        self.vision = vision
+
+    def save_pictures(self, args):
+        #print("saving picture")
+        img = self.vision.get_latest_valid_picture()
+
+        if (img is not None):
+            filename = "test_image_%06d.png" % self.index
+            #cv2.imwrite(filename, img)
+            self.index +=1
+
+
+# make my bebop object
+bebop = Bebop()
+
+# connect to the bebop
+success = bebop.connect(5)
 
 if (success):
-    print("turning on the video")
-    bebop.start_video_stream()
+    # start up the video
+    bebopVision = DroneVision(bebop, is_bebop=True)
 
-    print("sleeping")
-    bebop.smart_sleep(2)
+    userVision = UserVision(bebopVision)
+    bebopVision.set_user_callback_function(userVision.save_pictures, user_callback_args=None)
+    success = bebopVision.open_video()
 
-    bebop.ask_for_state_update()
+    if (success):
+        print("Vision successfully started!")
+        #removed the user call to this function (it now happens in open_video())
+        #bebopVision.start_video_buffering()
+        pyparrot.VisionServer.IMAGE_PATH = '/Users/Artemiss/.pyenv/versions/3.7.3/lib/python3.7/site-packages/pyparrot/images/image_%03d.png'
+        pyparrot.VisionServer.main()
 
-    bebop.safe_takeoff(10)
+        # skipping actually flying for safety purposes indoors - if you want
+        # different pictures, move the bebop around by hand
+        print("Fly me around by hand!")
+        bebop.smart_sleep(15)
 
-    # set safe indoor parameters
-    bebop.set_max_tilt(5)
-    bebop.set_max_vertical_speed(1)
+        print("Moving the camera using velocity")
+        # bebop.pan_tilt_camera_velocity(pan_velocity=0, tilt_velocity=-2, duration=4)
+        # bebop.smart_sleep(25)
+        print("Finishing demo and stopping vision")
+        bebopVision.close_video()
 
-    # trying out the new hull protector parameters - set to 1 for a hull protection and 0 without protection
-    #bebop.set_hull_protection(1)
-
-    print("Flying direct: Slow move for indoors")
-    bebop.fly_direct(roll=0, pitch=20, yaw=0, vertical_movement=0, duration=2)
-
-    bebop.smart_sleep(5)
-
-    bebop.safe_land(10)
-
-    print("DONE - disconnecting")
-    bebop.stop_video_stream()
-    bebop.smart_sleep(5)
-    print(bebop.sensors.battery)
+    # disconnect nicely so we don't need a reboot
     bebop.disconnect()
+else:
+    print("Error connecting to bebop.  Retry")
